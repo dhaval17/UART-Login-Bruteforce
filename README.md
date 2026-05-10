@@ -2,19 +2,19 @@
 
 A high-performance Rust tool for automated brute-force login attacks over UART serial connections. Designed for authorized security testing on embedded systems and IoT devices.
 
-## 🎯 Features
+## Features
 
-- ✅ **Sudo Permission Verification** - Ensures root access for serial port operations
-- ✅ **Flexible UART Configuration** - Customizable device path, baud rate, and timeouts
-- ✅ **Smart Prompt Detection** - Regex and literal string matching for username/password prompts
-- ✅ **Intelligent Failure Learning** - Uses obscure credentials to learn what a failed login looks like
-- ✅ **Wordlist Support** - Reads passwords from file (one per line)
-- ✅ **Real-time Feedback** - Shows attempt count, successes, and failures
-- ✅ **Success Detection** - Analyzes responses to identify successful authentication
-- ✅ **Error Recovery** - Handles timeouts and reconnection attempts
-- ✅ **Verbose Debugging** - Optional detailed output for troubleshooting
+- Sudo Permission Verification - Ensures root access for serial port operations
+- Flexible UART Configuration - Customizable device path, baud rate, and timeouts
+- Smart Prompt Detection - Regex and literal string matching for username/password prompts
+- Intelligent Failure Learning - Uses obscure credentials to learn what a failed login looks like
+- Wordlist Support - Reads passwords from file (one per line)
+- Real-time Feedback - Shows attempt count, successes, and failures
+- Success Detection - Analyzes responses to identify successful authentication
+- Error Recovery - Handles timeouts and reconnection attempts
+- Verbose Debugging - Optional detailed output for troubleshooting
 
-## 📋 Requirements
+## Requirements
 
 - **OS**: Linux (for UART access via /dev/ttyUSB* or /dev/ttyS*)
 - **Rust**: 1.70+ (for building)
@@ -25,7 +25,7 @@ A high-performance Rust tool for automated brute-force login attacks over UART s
   - `regex` - Pattern matching
   - `libc` - Sudo permission checking
 
-## 🚀 Installation
+## Installation
 
 ### From Source
 
@@ -53,7 +53,7 @@ sudo ./target/release/uart-bruteforce \
     --passwords wordlist.txt
 ```
 
-## 📖 Usage
+## Usage
 
 ### Basic Usage
 
@@ -117,7 +117,7 @@ sudo ./target/release/uart-bruteforce \
     --verbose
 ```
 
-## 🔍 How It Works
+## How It Works
 
 ### Phase 1: Connection & Learning
 1. Connects to specified serial device with given baud rate
@@ -141,7 +141,7 @@ sudo ./target/release/uart-bruteforce \
 - Checks for shell prompts ($, #, >)
 - Reports successful credentials and exits
 
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 ### "Permission Denied" on Serial Port
 ```bash
@@ -193,7 +193,7 @@ sudo ./target/release/uart-bruteforce \
 3. Ensure password file is readable and not empty
 4. Try connecting manually with `screen` to test credentials
 
-## 📝 Password Wordlist Format
+## Password Wordlist Format
 
 Password file should contain one password per line:
 
@@ -221,7 +221,7 @@ letmein
 EOF
 ```
 
-## ⚙️ Performance Tuning
+## Performance Tuning
 
 ### For Fast Devices
 ```bash
@@ -241,22 +241,22 @@ EOF
 3. Verify baud rate with device documentation
 4. Test with 5-10 passwords first
 
-## 🔐 Security Considerations
+## Security Considerations
 
-### ✅ Best Practices
+### Best Practices
 - Only use on systems you own or have explicit permission to test
 - Document all testing activities
 - Use unique username/password combinations
 - Test in isolated environments first
 - Follow local laws and regulations
 
-### ❌ Illegal Usage
+### Illegal Usage
 - Do NOT use without authorization
 - Do NOT target production systems
 - Do NOT leave running on unattended systems
 - Do NOT ignore security policies
 
-## 📊 Example Output
+## Example Output
 
 ```
 ╔════════════════════════════════════════════════╗
@@ -296,7 +296,7 @@ EOF
 [SUCCESS] Response: Welcome! You are now logged in as admin
 ```
 
-## 🐛 Debugging
+## Debugging
 
 Enable verbose output for detailed debugging:
 
@@ -317,14 +317,14 @@ Output will show:
 - Prompt detection events
 - Response parsing details
 
-## 📚 Additional Resources
+## Additional Resources
 
 - [Rust serialport crate](https://docs.rs/serialport/)
 - [Clap CLI framework](https://docs.rs/clap/)
 - [Linux serial port programming](https://tldp.org/HOWTO/Serial-Programming-HOWTO/)
 - [UART Communication Guide](https://en.wikipedia.org/wiki/Universal_asynchronous_receiver-transmitter)
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! Please feel free to:
 - Report bugs
@@ -332,11 +332,11 @@ Contributions are welcome! Please feel free to:
 - Submit pull requests
 - Improve documentation
 
-## ⚖️ License
+## License
 
 This project is provided as-is for educational and authorized security testing purposes. Users are responsible for ensuring they have permission to test any systems they target.
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 This tool is intended for authorized security testing only. Unauthorized access to computer systems is illegal. The author assumes no liability for misuse or damage caused by this tool.
 
