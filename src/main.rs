@@ -129,6 +129,72 @@ impl BruteforceSession {
         Ok(response)
     }
 
+    fn read_with_retry(&mut self) -> Result<String, Box<dyn std::error::Error>> {
+        let max_retries = 4;
+        let long_timeout = Duration::from_secs(10);
+        let wait_after_enter = Duration::from_secs(5);
+
+        for attempt in 0..max_retries {
+            self.verbose_log(&format!(
+                "Attempt {} of {}: Reading for 10 seconds...",
+                attempt + 1,
+                max_retries
+            ));
+
+            let mut buffer = [0u8; 1024];
+            let start = std::time::Instant::now();
+            let mut response = String::new();
+
+            // Try to read for 10 seconds
+            while start.elapsed() < long_timeout {
+                match self.port.read(&mut buffer) {
+                    Ok(n) if n > 0 => {
+                        let chunk = String::from_utf8_lossy(&buffer[..n]).to_string();
+                        response.push_str(&chunk);
+
+                        self.verbose_log(&format!(
+                            "[RX] {}",
+                            chunk.escape_debug()
+                        ));
+
+                        // If we got a response, return it immediately
+                        return Ok(response);
+                    }
+
+                    Ok(_) => {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+
+                    Err(ref e)
+                        if e.kind() == std::io::ErrorKind::TimedOut =>
+                    {
+                        std::thread::sleep(Duration::from_millis(10));
+                    }
+
+                    Err(e) => return Err(Box::new(e)),
+                }
+            }
+
+            // If we reach here, no response was received in 10 seconds
+            if attempt < max_retries - 1 {
+                self.verbose_log("No response received. Sending return key...");
+                self.port.write_all(b"\r\n")?;
+
+                self.verbose_log(&format!(
+                    "[TX] return key"
+                ));
+
+                // Wait 5 seconds after sending return
+                self.verbose_log("Waiting 5 seconds for response...");
+                std::thread::sleep(wait_after_enter);
+            }
+        }
+
+        // After all retries are exhausted, return empty response
+        self.log("[!] No response received after 4 retry attempts");
+        Ok(String::new())
+    }
+
     fn send_data(
         &mut self,
         data: &str,
@@ -167,7 +233,7 @@ impl BruteforceSession {
 
         self.log("[*] Waiting for username prompt...");
 
-        let response = self.read_until_timeout()?;
+        let response = self.read_with_retry()?;
 
         let username_prompt =
             self.username_prompt.clone();
@@ -183,7 +249,7 @@ impl BruteforceSession {
 
             self.log("[*] Waiting for password prompt...");
 
-            let response = self.read_until_timeout()?;
+            let response = self.read_with_retry()?;
 
             let password_prompt =
                 self.password_prompt.clone();
@@ -194,7 +260,7 @@ impl BruteforceSession {
                 std::thread::sleep(Duration::from_millis(500));
 
                 let final_response =
-                    self.read_until_timeout()?;
+                    self.read_with_retry()?;
 
                 self.failure_pattern =
                     final_response.clone();
@@ -228,7 +294,7 @@ impl BruteforceSession {
     ) -> Result<bool, Box<dyn std::error::Error>> {
         self.verbose_log("Waiting for username prompt...");
 
-        let response = self.read_until_timeout()?;
+        let response = self.read_with_retry()?;
 
         let username_prompt =
             self.username_prompt.clone();
@@ -253,7 +319,7 @@ impl BruteforceSession {
 
         self.verbose_log("Waiting for password prompt...");
 
-        let response = self.read_until_timeout()?;
+        let response = self.read_with_retry()?;
 
         let password_prompt =
             self.password_prompt.clone();
@@ -274,7 +340,7 @@ impl BruteforceSession {
         std::thread::sleep(Duration::from_millis(500));
 
         let final_response =
-            self.read_until_timeout()?;
+            self.read_with_retry()?;
 
         let success_indicators = vec![
             "welcome",
@@ -524,4 +590,3 @@ mod uuid {
         }
     }
 }
-
