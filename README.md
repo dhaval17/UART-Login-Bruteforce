@@ -1,4 +1,4 @@
-# UART Login Bruteforce Tool
+# UART Login Bruteforce Tool - D-Link-DSL-224 Specific
 
 A high-performance Rust tool for automated brute-force login attacks over UART serial connections. Designed for authorized security testing on embedded systems and IoT devices.
 
