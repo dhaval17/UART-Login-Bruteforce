@@ -25,6 +25,10 @@ A high-performance Rust tool for automated brute-force login attacks over UART s
   - `regex` - Pattern matching
   - `libc` - Sudo permission checking
 
+## Device Specific Branches
+
+- DLink-DSL-224: https://github.com/dhaval17/UART-Login-Bruteforce/tree/DLink-DSL-224
+
 ## Installation
 
 ### From Source
